@@ -441,15 +441,23 @@ fun BoardCanvasScreen(
                     }
                 } else if (viewModeCanvas) {
                     // DRAG CANVAS sorted by zIndex ascending, so higher zIndex is drawn on top
-                    Box(
+                    BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
                             .clip(RectangleShape)
                     ) {
+                        val canvasWidth = constraints.maxWidth.toFloat()
+                        val canvasHeight = constraints.maxHeight.toFloat()
+                        
+                        val safeWidth = if (canvasWidth > 0f) canvasWidth else 1080f
+                        val safeHeight = if (canvasHeight > 0f) canvasHeight else 800f
+
                         activePins.sortedWith(compareBy({ it.zIndex }, { it.id })).forEach { pin ->
                             DraggablePinCard(
                                 pin = pin,
+                                canvasWidth = safeWidth,
+                                canvasHeight = safeHeight,
                                 onUpdatePosition = { x, y -> viewModel.updatePinPosition(pin, x, y) },
                                 onDelete = { viewModel.deletePin(pin.id) },
                                 onEdit = { onEditNote(pin) },
@@ -559,6 +567,8 @@ fun BoardCanvasScreen(
 @Composable
 fun DraggablePinCard(
     pin: PinItem,
+    canvasWidth: Float,
+    canvasHeight: Float,
     onUpdatePosition: (Float, Float) -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
@@ -566,14 +576,40 @@ fun DraggablePinCard(
     onToggleBook: (String) -> Unit,
     onBringToFront: () -> Unit
 ) {
-    var offsetX by remember { mutableStateOf(pin.posX) }
-    var offsetY by remember { mutableStateOf(pin.posY) }
-    
-    LaunchedEffect(pin.posX, pin.posY) {
-        if (pin.posX.isFinite() && pin.posY.isFinite()) {
-            offsetX = pin.posX
-            offsetY = pin.posY
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val cardWidthPx = remember(pin.width, density) {
+        with(density) { pin.width.dp.toPx() }
+    }
+    val cardHeightPx = remember(pin.height, density) {
+        with(density) { if (pin.height > 0f) pin.height.dp.toPx() else 300.dp.toPx() }
+    }
+
+    val initialX = remember(pin.posX, canvasWidth) {
+        val normX = if (pin.posX > 1.2f) {
+            (pin.posX / 1100f).coerceIn(0f, 1f)
+        } else {
+            pin.posX.coerceIn(0f, 1f)
         }
+        val maxAvailableX = (canvasWidth - cardWidthPx).coerceAtLeast(0f)
+        normX * maxAvailableX
+    }
+
+    val initialY = remember(pin.posY, canvasHeight) {
+        val normY = if (pin.posY > 1.2f) {
+            (pin.posY / 800f).coerceIn(0f, 1f)
+        } else {
+            pin.posY.coerceIn(0f, 1f)
+        }
+        val maxAvailableY = (canvasHeight - cardHeightPx).coerceAtLeast(0f)
+        normY * maxAvailableY
+    }
+
+    var offsetX by remember { mutableStateOf(initialX) }
+    var offsetY by remember { mutableStateOf(initialY) }
+    
+    LaunchedEffect(initialX, initialY) {
+        offsetX = initialX
+        offsetY = initialY
     }
     
     val safeOffsetX = if (offsetX.isFinite()) offsetX else 0f
@@ -581,21 +617,25 @@ fun DraggablePinCard(
     
     val baseModifier = Modifier
         .offset { IntOffset(safeOffsetX.roundToInt(), safeOffsetY.roundToInt()) }
-        .pointerInput(pin.id) {
+        .pointerInput(pin.id, canvasWidth, canvasHeight) {
             detectDragGestures(
                 onDragStart = { onBringToFront() },
                 onDragEnd = { 
-                    if (safeOffsetX.isFinite() && safeOffsetY.isFinite()) {
-                        onUpdatePosition(safeOffsetX, safeOffsetY) 
+                    if (safeOffsetX.isFinite() && safeOffsetY.isFinite() && canvasWidth > 0f && canvasHeight > 0f) {
+                        val maxAvailableX = (canvasWidth - cardWidthPx).coerceAtLeast(1f)
+                        val maxAvailableY = (canvasHeight - cardHeightPx).coerceAtLeast(1f)
+                        val finalNormX = (safeOffsetX / maxAvailableX).coerceIn(0f, 1f)
+                        val finalNormY = (safeOffsetY / maxAvailableY).coerceIn(0f, 1f)
+                        onUpdatePosition(finalNormX, finalNormY) 
                     }
                 },
                 onDrag = { change, dragAmount ->
                     change.consume()
                     val nextX = offsetX + dragAmount.x
                     val nextY = offsetY + dragAmount.y
-                    if (nextX.isFinite() && nextY.isFinite()) {
-                        offsetX = nextX
-                        offsetY = nextY
+                    if (nextX.isFinite() && nextY.isFinite() && canvasWidth > 0f && canvasHeight > 0f) {
+                        offsetX = nextX.coerceIn(0f, (canvasWidth - cardWidthPx).coerceAtLeast(0f))
+                        offsetY = nextY.coerceIn(0f, (canvasHeight - cardHeightPx).coerceAtLeast(0f))
                     }
                 }
             )

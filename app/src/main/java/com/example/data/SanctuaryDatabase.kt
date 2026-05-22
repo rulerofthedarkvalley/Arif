@@ -77,8 +77,13 @@ abstract class SanctuaryDatabase : RoomDatabase() {
     ) : RoomDatabase.Callback() {
         override fun onCreate(db: SupportSQLiteDatabase) {
             super.onCreate(db)
-            INSTANCE?.let { database ->
-                scope.launch(Dispatchers.IO) {
+            scope.launch(Dispatchers.IO) {
+                var retries = 0
+                while (INSTANCE == null && retries < 10) {
+                    kotlinx.coroutines.delay(50)
+                    retries++
+                }
+                INSTANCE?.let { database ->
                     populateInitialData(database.boardDao(), database.pinItemDao())
                 }
             }

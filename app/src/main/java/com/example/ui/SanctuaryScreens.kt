@@ -466,24 +466,37 @@ fun DraggablePinCard(
     var offsetY by remember { mutableStateOf(pin.posY) }
     
     LaunchedEffect(pin.posX, pin.posY) {
-        offsetX = pin.posX
-        offsetY = pin.posY
+        if (pin.posX.isFinite() && pin.posY.isFinite()) {
+            offsetX = pin.posX
+            offsetY = pin.posY
+        }
     }
+    
+    val safeOffsetX = if (offsetX.isFinite()) offsetX else 0f
+    val safeOffsetY = if (offsetY.isFinite()) offsetY else 0f
     
     Box(
         modifier = Modifier
-            .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+            .offset { IntOffset(safeOffsetX.roundToInt(), safeOffsetY.roundToInt()) }
             .pointerInput(pin.id) {
                 detectDragGestures(
-                    onDragEnd = { onUpdatePosition(offsetX, offsetY) },
+                    onDragEnd = { 
+                        if (safeOffsetX.isFinite() && safeOffsetY.isFinite()) {
+                            onUpdatePosition(safeOffsetX, safeOffsetY) 
+                        }
+                    },
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        offsetX += dragAmount.x
-                        offsetY += dragAmount.y
+                        val nextX = offsetX + dragAmount.x
+                        val nextY = offsetY + dragAmount.y
+                        if (nextX.isFinite() && nextY.isFinite()) {
+                            offsetX = nextX
+                            offsetY = nextY
+                        }
                     }
                 )
             }
-            .graphicsLayer(rotationZ = pin.rotation)
+            .graphicsLayer(rotationZ = if (pin.rotation.isFinite()) pin.rotation else 0f)
             .width(260.dp)
     ) {
         CorePinCard(

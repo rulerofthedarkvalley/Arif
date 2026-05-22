@@ -51,7 +51,7 @@ interface PinItemDao {
     suspend fun deletePin(pinId: Int)
 }
 
-@Database(entities = [Board::class, PinItem::class], version = 2, exportSchema = false)
+@Database(entities = [Board::class, PinItem::class], version = 3, exportSchema = false)
 abstract class SanctuaryDatabase : RoomDatabase() {
     abstract fun boardDao(): BoardDao
     abstract fun pinItemDao(): PinItemDao

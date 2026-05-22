@@ -53,6 +53,17 @@ import com.example.data.PinItem
 import com.example.ui.theme.*
 import com.example.viewmodel.SanctuaryViewModel
 
+fun resolveFontFamily(pin: PinItem?): FontFamily {
+    val familyStr = pin?.fontFamilyStr ?: "SansSerif"
+    return when (familyStr.lowercase()) {
+        "serif" -> FontFamily.Serif
+        "sans-serif", "sans", "sansserif" -> FontFamily.SansSerif
+        "monospace", "mono" -> FontFamily.Monospace
+        "cursive" -> FontFamily.Cursive
+        else -> if (pin?.fontSerif == true) FontFamily.Serif else FontFamily.Default
+    }
+}
+
 // --- Dotted Background Canvas ---
 @Composable
 fun DottedCanvasBackground(modifier: Modifier = Modifier) {
@@ -585,22 +596,24 @@ fun DraggablePinCard(
     }
 
     val initialX = remember(pin.posX, canvasWidth) {
-        val normX = if (pin.posX > 1.2f) {
-            val ratio = ((pin.posX - 40f) / (820f - 40f)).coerceIn(0f, 1f)
+        val safePosX = if (pin.posX.isFinite()) pin.posX else 0f
+        val normX = if (safePosX > 1.2f) {
+            val ratio = ((safePosX - 40f) / (820f - 40f)).coerceIn(0f, 1f)
             0.02f + ratio * 0.96f
         } else {
-            pin.posX.coerceIn(0f, 1f)
+            safePosX.coerceIn(0f, 1f)
         }
         val maxAvailableX = (canvasWidth - cardWidthPx).coerceAtLeast(0f)
         normX * maxAvailableX
     }
 
     val initialY = remember(pin.posY, canvasHeight) {
-        val normY = if (pin.posY > 1.2f) {
-            val ratio = ((pin.posY - 40f) / (480f - 40f)).coerceIn(0f, 1f)
+        val safePosY = if (pin.posY.isFinite()) pin.posY else 0f
+        val normY = if (safePosY > 1.2f) {
+            val ratio = ((safePosY - 40f) / (480f - 40f)).coerceIn(0f, 1f)
             0.03f + ratio * 0.92f
         } else {
-            pin.posY.coerceIn(0f, 1f)
+            safePosY.coerceIn(0f, 1f)
         }
         val maxAvailableY = (canvasHeight - cardHeightPx).coerceAtLeast(0f)
         normY * maxAvailableY
@@ -715,7 +728,7 @@ fun CorePinCard(
     val cardOnBg = if (pin.bgColor.lowercase() == "navy" || pin.bgColor.lowercase() == "green" || pin.bgColor.lowercase() == "teal") Color.White else TextDark
     val cardMutedOnBg = if (pin.bgColor.lowercase() == "navy" || pin.bgColor.lowercase() == "green" || pin.bgColor.lowercase() == "teal") Color.White.copy(alpha = 0.7f) else TextMuted
     
-    val serifFont = if (pin.fontSerif) FontFamily.Serif else FontFamily.Default
+    val serifFont = resolveFontFamily(pin)
     val textWeight = if (pin.isBold) FontWeight.Bold else FontWeight.Normal
     val textStyle = if (pin.isItalic) FontStyle.Italic else FontStyle.Normal
     val textDecor = if (pin.isUnderline) TextDecoration.Underline else TextDecoration.None
@@ -1390,7 +1403,7 @@ fun InspirationGalleryScreen(
                                                 text = pin.bodyText,
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = TextMuted,
-                                                fontFamily = if (pin.fontSerif) FontFamily.Serif else FontFamily.Default,
+                                                fontFamily = resolveFontFamily(pin),
                                                 maxLines = 4
                                             )
                                         }
@@ -1707,7 +1720,7 @@ fun InspirationGalleryScreen(
                                             text = pin.bodyText,
                                             style = MaterialTheme.typography.bodySmall,
                                             color = TextMuted,
-                                            fontFamily = if (pin.fontSerif) FontFamily.Serif else FontFamily.Default,
+                                            fontFamily = resolveFontFamily(pin),
                                             maxLines = 4
                                         )
                                     }
@@ -2572,6 +2585,13 @@ fun RichTextEditorSheet(
     var subtitle by remember { mutableStateOf(pin.subtitle) }
     
     var fontSerif by remember { mutableStateOf(pin.fontSerif) }
+    var fontFamilyStr by remember { 
+        val safeFamily = pin.fontFamilyStr ?: ""
+        mutableStateOf(
+            if (safeFamily != "SansSerif" && safeFamily.isNotEmpty()) safeFamily 
+            else if (pin.fontSerif) "Serif" else "SansSerif"
+        ) 
+    }
     var isBold by remember { mutableStateOf(pin.isBold) }
     var isItalic by remember { mutableStateOf(pin.isItalic) }
     var isUnderline by remember { mutableStateOf(pin.isUnderline) }
@@ -2608,7 +2628,7 @@ fun RichTextEditorSheet(
                         .verticalScroll(rememberScrollState())
                 ) {
                     Text(
-                        text = "CARD STYLINGS & FONTS",
+                        text = "TEXT FORMATTING",
                         style = MaterialTheme.typography.labelSmall,
                         color = SageGreen,
                         fontWeight = FontWeight.Bold,
@@ -2616,7 +2636,7 @@ fun RichTextEditorSheet(
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     
-                    // FORMAT CONTROLS ROW
+                    // HIGHLIGHTED FORMAT CONTROLS ROW (Bold, Italic, Underline)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2625,44 +2645,138 @@ fun RichTextEditorSheet(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "Serif",
-                            fontFamily = FontFamily.Serif,
-                            fontWeight = FontWeight.Bold,
-                            color = if (fontSerif) SageGreen else TextMuted,
+                        // Bold Button
+                        Box(
                             modifier = Modifier
-                                .clickable { fontSerif = !fontSerif }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                        Text(
-                            text = "B",
-                            fontWeight = FontWeight.Bold,
-                            color = if (isBold) SageGreen else TextMuted,
-                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isBold) SageGreen.copy(alpha = 0.15f) else Color.Transparent)
+                                .border(
+                                    width = if (isBold) 1.dp else 0.dp,
+                                    color = if (isBold) SageGreen.copy(alpha = 0.4f) else Color.Transparent,
+                                    shape = RoundedCornerShape(6.dp)
+                                )
                                 .clickable { isBold = !isBold }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                        Text(
-                            text = "I",
-                            fontStyle = FontStyle.Italic,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isItalic) SageGreen else TextMuted,
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Bold",
+                                fontWeight = FontWeight.Bold,
+                                color = if (isBold) SageGreen else TextMuted,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        
+                        // Italic Button
+                        Box(
                             modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isItalic) SageGreen.copy(alpha = 0.15f) else Color.Transparent)
+                                .border(
+                                    width = if (isItalic) 1.dp else 0.dp,
+                                    color = if (isItalic) SageGreen.copy(alpha = 0.4f) else Color.Transparent,
+                                    shape = RoundedCornerShape(6.dp)
+                                )
                                 .clickable { isItalic = !isItalic }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                        Text(
-                            text = "U",
-                            textDecoration = TextDecoration.Underline,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isUnderline) SageGreen else TextMuted,
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Italic",
+                                fontStyle = FontStyle.Italic,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isItalic) SageGreen else TextMuted,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        
+                        // Underline Button
+                        Box(
                             modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isUnderline) SageGreen.copy(alpha = 0.15f) else Color.Transparent)
+                                .border(
+                                    width = if (isUnderline) 1.dp else 0.dp,
+                                    color = if (isUnderline) SageGreen.copy(alpha = 0.4f) else Color.Transparent,
+                                    shape = RoundedCornerShape(6.dp)
+                                )
                                 .clickable { isUnderline = !isUnderline }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Underline",
+                                textDecoration = TextDecoration.Underline,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isUnderline) SageGreen else TextMuted,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
                     }
                     
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = "CHOOSE FONT STYLE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SageGreen,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    
+                    // MULTIPLE BEAUTIFUL FONT OPTIONS ROW
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("SansSerif", "Serif", "Monospace", "Cursive").forEach { font ->
+                            val label = when (font) {
+                                "SansSerif" -> "Sans"
+                                "Serif" -> "Serif"
+                                "Monospace" -> "Mono"
+                                "Cursive" -> "Script"
+                                else -> font
+                            }
+                            val isSelected = fontFamilyStr.lowercase() == font.lowercase()
+                            
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) SageGreen.copy(alpha = 0.15f) else SurfaceCream)
+                                    .border(
+                                        width = if (isSelected) 1.5.dp else 0.dp,
+                                        color = if (isSelected) SageGreen else Color.Transparent,
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable { 
+                                        fontFamilyStr = font
+                                        fontSerif = (font.lowercase() == "serif")
+                                    }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) SageGreen else TextMuted,
+                                    fontFamily = when (font) {
+                                        "Serif" -> FontFamily.Serif
+                                        "Monospace" -> FontFamily.Monospace
+                                        "Cursive" -> FontFamily.Cursive
+                                        else -> FontFamily.SansSerif
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
                     
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -2816,7 +2930,13 @@ fun RichTextEditorSheet(
                             .fillMaxWidth()
                             .height(110.dp),
                         textStyle = TextStyle(
-                            fontFamily = if (fontSerif) FontFamily.Serif else FontFamily.Default,
+                            fontFamily = when (fontFamilyStr.lowercase()) {
+                                "serif" -> FontFamily.Serif
+                                "sans-serif", "sans", "sansserif" -> FontFamily.SansSerif
+                                "monospace", "mono" -> FontFamily.Monospace
+                                "cursive" -> FontFamily.Cursive
+                                else -> FontFamily.Default
+                            },
                             fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal,
                             fontStyle = if (isItalic) FontStyle.Italic else FontStyle.Normal,
                             textDecoration = if (isUnderline) TextDecoration.Underline else TextDecoration.None
@@ -2861,7 +2981,8 @@ fun RichTextEditorSheet(
                                     width = widthScale,
                                     height = heightScale,
                                     shape = shape,
-                                    zIndex = zIndex
+                                    zIndex = zIndex,
+                                    fontFamilyStr = fontFamilyStr
                                 )
                             )
                         },

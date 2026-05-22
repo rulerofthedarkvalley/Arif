@@ -36,5 +36,6 @@ data class PinItem(
     val width: Float = 260f,
     val height: Float = 0f, // 0f means wrap content
     val shape: String = "rounded", // "rounded", "cut", "circle", "square", "capsule"
-    val zIndex: Float = 1f
+    val zIndex: Float = 1f,
+    val fontFamilyStr: String = "SansSerif"
 )

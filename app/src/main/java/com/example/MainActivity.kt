@@ -80,7 +80,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainSanctuaryShell(viewModel: SanctuaryViewModel) {
-    var activeTab by remember { mutableStateOf("canvas") } // "canvas", "gallery", "boards"
+    var activeTab by remember { mutableStateOf("canvas") } // "canvas", "boards"
     
     var showAddPinDialog by remember { mutableStateOf(false) }
     var showCreateBoardDialog by remember { mutableStateOf(false) }
@@ -88,6 +88,7 @@ fun MainSanctuaryShell(viewModel: SanctuaryViewModel) {
     val boards by viewModel.allBoards.collectAsState()
     val activeBoardId by viewModel.activeBoardId.collectAsState()
     val editingPin by viewModel.editingPin.collectAsState()
+    val isFullScreen by viewModel.isFullScreen.collectAsState()
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isTablet = maxWidth >= 720.dp
@@ -97,7 +98,7 @@ fun MainSanctuaryShell(viewModel: SanctuaryViewModel) {
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background),
             bottomBar = {
-                if (!isTablet) {
+                if (!isTablet && !isFullScreen) {
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surface,
                         tonalElevation = 6.dp
@@ -122,28 +123,6 @@ fun MainSanctuaryShell(viewModel: SanctuaryViewModel) {
                                 unselectedTextColor = SageGreen.copy(alpha = 0.5f)
                             ),
                             modifier = Modifier.testTag("nav_canvas_tab")
-                        )
-                        
-                        // Gallery explore navigation
-                        NavigationBarItem(
-                            selected = activeTab == "gallery",
-                            onClick = { activeTab = "gallery" },
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.Default.Search,
-                                    contentDescription = "Gallery Explore",
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            },
-                            label = { Text("Explore") },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color.White,
-                                selectedTextColor = DeepNavy,
-                                indicatorColor = SageGreen,
-                                unselectedIconColor = SageGreen.copy(alpha = 0.5f),
-                                unselectedTextColor = SageGreen.copy(alpha = 0.5f)
-                            ),
-                            modifier = Modifier.testTag("nav_gallery_tab")
                         )
                         
                         // Custom boards list panel
@@ -188,7 +167,7 @@ fun MainSanctuaryShell(viewModel: SanctuaryViewModel) {
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                if (isTablet) {
+                if (isTablet && !isFullScreen) {
                     NavigationRail(
                         containerColor = MaterialTheme.colorScheme.surface,
                         modifier = Modifier
@@ -249,29 +228,6 @@ fun MainSanctuaryShell(viewModel: SanctuaryViewModel) {
                         Spacer(modifier = Modifier.height(16.dp))
                         
                         NavigationRailItem(
-                            selected = activeTab == "gallery",
-                            onClick = { activeTab = "gallery" },
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.Default.Search,
-                                    contentDescription = "Gallery Explore",
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            },
-                            label = { Text("Explore") },
-                            colors = NavigationRailItemDefaults.colors(
-                                selectedIconColor = Color.White,
-                                selectedTextColor = DeepNavy,
-                                indicatorColor = SageGreen,
-                                unselectedIconColor = SageGreen.copy(alpha = 0.5f),
-                                unselectedTextColor = SageGreen.copy(alpha = 0.5f)
-                            ),
-                            modifier = Modifier.testTag("nav_gallery_tab")
-                        )
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        NavigationRailItem(
                             selected = activeTab == "boards",
                             onClick = { activeTab = "boards" },
                             icon = {
@@ -307,13 +263,6 @@ fun MainSanctuaryShell(viewModel: SanctuaryViewModel) {
                                     viewModel = viewModel,
                                     onEditNote = { pin -> viewModel.startEditingPin(pin) },
                                     onAddNewPinClick = { showAddPinDialog = true },
-                                    isTablet = isTablet
-                                )
-                            }
-                            
-                            "gallery" -> {
-                                InspirationGalleryScreen(
-                                    viewModel = viewModel,
                                     isTablet = isTablet
                                 )
                             }

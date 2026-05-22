@@ -39,6 +39,18 @@ class SanctuaryViewModel(application: Application) : AndroidViewModel(applicatio
     private val _editingPin = MutableStateFlow<PinItem?>(null)
     val editingPin: StateFlow<PinItem?> = _editingPin.asStateFlow()
 
+    // Full Screen Mode state
+    private val _isFullScreen = MutableStateFlow(false)
+    val isFullScreen: StateFlow<Boolean> = _isFullScreen.asStateFlow()
+
+    fun toggleFullScreen() {
+        _isFullScreen.value = !_isFullScreen.value
+    }
+
+    fun setFullScreen(enabled: Boolean) {
+        _isFullScreen.value = enabled
+    }
+
     // Gemini Daily Spark state
     private val _dailySpark = MutableStateFlow(
         GeminiSparkResult(

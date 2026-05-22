@@ -112,6 +112,7 @@ fun BoardCanvasScreen(
     val boards by viewModel.allBoards.collectAsState()
     val activeBoardId by viewModel.activeBoardId.collectAsState()
     val activePins by viewModel.activeBoardPins.collectAsState()
+    val isFullScreen by viewModel.isFullScreen.collectAsState()
     
     val activeBoard = boards.find { it.id == activeBoardId } ?: Board(title = "Inspiration", description = "", category = "", coverImageUrl = "")
     var viewModeCanvas by remember { mutableStateOf(true) } // true = Drag Canvas, false = Staggered Grid
@@ -119,7 +120,7 @@ fun BoardCanvasScreen(
     var showEditWorkspaceDialog by remember { mutableStateOf(false) }
     
     Row(modifier = Modifier.fillMaxSize()) {
-        if (isTablet) {
+        if (isTablet && !isFullScreen) {
             // Elegant Vision Boards Side Panel
             Surface(
                 modifier = Modifier
@@ -149,16 +150,30 @@ fun BoardCanvasScreen(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.2.sp
                         )
-                        IconButton(
-                            onClick = { showCreateBoardInCanvas = true },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AddCircle,
-                                contentDescription = "Create Board",
-                                tint = SageGreen,
-                                modifier = Modifier.size(20.dp)
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { viewModel.toggleFullScreen() },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Star,
+                                    contentDescription = "Turn Workspace Vision Board into Full Screen",
+                                    tint = SageGreen,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            IconButton(
+                                onClick = { showCreateBoardInCanvas = true },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AddCircle,
+                                    contentDescription = "Create Board",
+                                    tint = SageGreen,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
                     
@@ -278,82 +293,102 @@ fun BoardCanvasScreen(
             
             Column(modifier = Modifier.fillMaxSize()) {
                 // Elegant Canvas Header Info
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                    tonalElevation = 1.dp
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp, vertical = 16.dp)
+                if (!isFullScreen) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                        tonalElevation = 1.dp
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 16.dp)
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Star,
-                                        contentDescription = "Active Sanctuary",
-                                        tint = SageGreen,
-                                        modifier = Modifier.size(20.dp).padding(end = 4.dp)
-                                    )
-                                    Text(
-                                        text = activeBoard.title.uppercase(),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = SageGreen,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 1.5.sp
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    IconButton(
-                                        onClick = { showEditWorkspaceDialog = true },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(
-                                            imageVector = Icons.Default.Edit,
-                                            contentDescription = "Edit Workspace Title",
+                                            imageVector = Icons.Default.Star,
+                                            contentDescription = "Active Sanctuary",
                                             tint = SageGreen,
-                                            modifier = Modifier.size(14.dp)
+                                            modifier = Modifier.size(20.dp).padding(end = 4.dp)
+                                        )
+                                        Text(
+                                            text = activeBoard.title.uppercase(),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = SageGreen,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 1.5.sp
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        IconButton(
+                                            onClick = { showEditWorkspaceDialog = true },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Edit,
+                                                contentDescription = "Edit Workspace Title",
+                                                tint = SageGreen,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = if (activeBoard.description.isBlank()) "Your space for creative visualization." else activeBoard.description,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = TextMuted
+                                    )
+                                }
+                                
+                                // Header Action Cluster
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = if (viewModeCanvas) "Canvas Mode" else "Grid Mode",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TextMuted,
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                    IconButton(onClick = { viewModeCanvas = !viewModeCanvas }) {
+                                        Icon(
+                                            imageVector = if (viewModeCanvas) Icons.Default.List else Icons.Default.Home,
+                                            contentDescription = "Toggle Grid/Canvas View",
+                                            tint = SageGreen
                                         )
                                     }
-                                }
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = if (activeBoard.description.isBlank()) "Your space for creative visualization." else activeBoard.description,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = TextMuted
-                                )
-                            }
-                            
-                            // Header Action Cluster
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = if (viewModeCanvas) "Canvas Mode" else "Grid Mode",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = TextMuted,
-                                    modifier = Modifier.padding(end = 8.dp)
-                                )
-                                IconButton(onClick = { viewModeCanvas = !viewModeCanvas }) {
-                                    Icon(
-                                        imageVector = if (viewModeCanvas) Icons.Default.List else Icons.Default.Home,
-                                        contentDescription = "Toggle Grid/Canvas View",
-                                        tint = SageGreen
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Button(
-                                    onClick = onAddNewPinClick,
-                                    colors = ButtonDefaults.buttonColors(containerColor = SageGreen),
-                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                                    modifier = Modifier.testTag("add_intent_button")
-                                ) {
-                                    Icon(Icons.Default.Add, contentDescription = "Add Intent", modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Add Intent", style = MaterialTheme.typography.labelMedium)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    TextButton(
+                                        onClick = { viewModel.toggleFullScreen() },
+                                        colors = ButtonDefaults.textButtonColors(contentColor = SageGreen),
+                                        modifier = Modifier.testTag("toggle_fullscreen_button")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Star,
+                                            contentDescription = "Toggle Full Screen",
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Full Screen",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Button(
+                                        onClick = onAddNewPinClick,
+                                        colors = ButtonDefaults.buttonColors(containerColor = SageGreen),
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                        modifier = Modifier.testTag("add_intent_button")
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = "Add Intent", modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Add Intent", style = MaterialTheme.typography.labelMedium)
+                                    }
                                 }
                             }
                         }
@@ -451,6 +486,37 @@ fun BoardCanvasScreen(
                                 )
                             }
                         }
+                    }
+                }
+            }
+
+            if (isFullScreen) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.TopEnd
+                ) {
+                    Button(
+                        onClick = { viewModel.setFullScreen(false) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SageGreen,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier.testTag("exit_fullscreen_floating_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Exit Full Screen",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Exit Full Screen",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }

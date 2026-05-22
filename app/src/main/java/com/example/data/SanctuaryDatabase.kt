@@ -90,6 +90,20 @@ abstract class SanctuaryDatabase : RoomDatabase() {
             }
         }
 
+        override fun onDestructiveMigration(db: SupportSQLiteDatabase) {
+            super.onDestructiveMigration(db)
+            scope.launch(Dispatchers.IO) {
+                var retries = 0
+                while (INSTANCE == null && retries < 10) {
+                    kotlinx.coroutines.delay(50)
+                    retries++
+                }
+                INSTANCE?.let { database ->
+                    populateInitialData(database.boardDao(), database.pinItemDao())
+                }
+            }
+        }
+
         suspend fun populateInitialData(boardDao: BoardDao, pinItemDao: PinItemDao) {
             // 1. Initial Boards
             val activeId = boardDao.insertBoard(

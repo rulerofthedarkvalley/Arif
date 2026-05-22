@@ -586,7 +586,8 @@ fun DraggablePinCard(
 
     val initialX = remember(pin.posX, canvasWidth) {
         val normX = if (pin.posX > 1.2f) {
-            (pin.posX / 1100f).coerceIn(0f, 1f)
+            val ratio = ((pin.posX - 40f) / (820f - 40f)).coerceIn(0f, 1f)
+            0.02f + ratio * 0.96f
         } else {
             pin.posX.coerceIn(0f, 1f)
         }
@@ -596,7 +597,8 @@ fun DraggablePinCard(
 
     val initialY = remember(pin.posY, canvasHeight) {
         val normY = if (pin.posY > 1.2f) {
-            (pin.posY / 800f).coerceIn(0f, 1f)
+            val ratio = ((pin.posY - 40f) / (480f - 40f)).coerceIn(0f, 1f)
+            0.03f + ratio * 0.92f
         } else {
             pin.posY.coerceIn(0f, 1f)
         }

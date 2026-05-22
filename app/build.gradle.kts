@@ -119,3 +119,25 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
+val buildDirPath = layout.buildDirectory.asFile.get().absolutePath
+val rootDirPath = rootDir.absolutePath
+tasks.register("copyApkToRoot") {
+    val srcPath = "$buildDirPath/outputs/apk/debug/app-debug.apk"
+    val destPath = "$rootDirPath/Sanctuary_App_Download_Me.apk"
+    doLast {
+        val srcFile = File(srcPath)
+        val destFile = File(destPath)
+        if (srcFile.exists()) {
+            srcFile.copyTo(destFile, overwrite = true)
+            println("Successfully copied APK to ${destFile.absolutePath}")
+        } else {
+            println("Warning: Source APK does not exist at ${srcFile.absolutePath}")
+        }
+    }
+}
+
+afterEvaluate {
+    tasks.findByName("assembleDebug")?.finalizedBy("copyApkToRoot")
+}
+

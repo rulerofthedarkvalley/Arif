@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,6 +17,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -114,6 +116,7 @@ fun BoardCanvasScreen(
     val activeBoard = boards.find { it.id == activeBoardId } ?: Board(title = "Inspiration", description = "", category = "", coverImageUrl = "")
     var viewModeCanvas by remember { mutableStateOf(true) } // true = Drag Canvas, false = Staggered Grid
     var showCreateBoardInCanvas by remember { mutableStateOf(false) }
+    var showEditWorkspaceDialog by remember { mutableStateOf(false) }
     
     Row(modifier = Modifier.fillMaxSize()) {
         if (isTablet) {
@@ -305,6 +308,18 @@ fun BoardCanvasScreen(
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 1.5.sp
                                     )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    IconButton(
+                                        onClick = { showEditWorkspaceDialog = true },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Edit Workspace Title",
+                                            tint = SageGreen,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
                                 }
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
@@ -388,21 +403,27 @@ fun BoardCanvasScreen(
                         }
                     }
                 } else if (viewModeCanvas) {
-                    // DRAG CANVAS
+                    // DRAG CANVAS sorted by zIndex ascending, so higher zIndex is drawn on top
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
                             .clip(RectangleShape)
                     ) {
-                        activePins.forEach { pin ->
+                        activePins.sortedWith(compareBy({ it.zIndex }, { it.id })).forEach { pin ->
                             DraggablePinCard(
                                 pin = pin,
                                 onUpdatePosition = { x, y -> viewModel.updatePinPosition(pin, x, y) },
                                 onDelete = { viewModel.deletePin(pin.id) },
                                 onEdit = { onEditNote(pin) },
                                 onToggleHabit = { item -> viewModel.toggleHabitItem(pin, item) },
-                                onToggleBook = { item -> viewModel.toggleReadingItem(pin, item) }
+                                onToggleBook = { item -> viewModel.toggleReadingItem(pin, item) },
+                                onBringToFront = {
+                                    val maxZIndex = activePins.maxOfOrNull { it.zIndex } ?: 1f
+                                    if (pin.zIndex <= maxZIndex) {
+                                        viewModel.updatePin(pin.copy(zIndex = maxZIndex + 1f))
+                                    }
+                                }
                             )
                         }
                     }
@@ -450,6 +471,24 @@ fun BoardCanvasScreen(
             }
         )
     }
+    
+    if (showEditWorkspaceDialog) {
+        EditBoardDialog(
+            board = activeBoard,
+            onDismiss = { showEditWorkspaceDialog = false },
+            onSubmit = { title, desc, category, coverImageUrl ->
+                viewModel.updateBoard(
+                    activeBoard.copy(
+                        title = title,
+                        description = desc,
+                        category = category,
+                        coverImageUrl = coverImageUrl
+                    )
+                )
+                showEditWorkspaceDialog = false
+            }
+        )
+    }
 }
 
 // --- Draggable Physical Card Component ---
@@ -460,7 +499,8 @@ fun DraggablePinCard(
     onDelete: () -> Unit,
     onEdit: () -> Unit,
     onToggleHabit: (String) -> Unit,
-    onToggleBook: (String) -> Unit
+    onToggleBook: (String) -> Unit,
+    onBringToFront: () -> Unit
 ) {
     var offsetX by remember { mutableStateOf(pin.posX) }
     var offsetY by remember { mutableStateOf(pin.posY) }
@@ -475,29 +515,41 @@ fun DraggablePinCard(
     val safeOffsetX = if (offsetX.isFinite()) offsetX else 0f
     val safeOffsetY = if (offsetY.isFinite()) offsetY else 0f
     
-    Box(
-        modifier = Modifier
-            .offset { IntOffset(safeOffsetX.roundToInt(), safeOffsetY.roundToInt()) }
-            .pointerInput(pin.id) {
-                detectDragGestures(
-                    onDragEnd = { 
-                        if (safeOffsetX.isFinite() && safeOffsetY.isFinite()) {
-                            onUpdatePosition(safeOffsetX, safeOffsetY) 
-                        }
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        val nextX = offsetX + dragAmount.x
-                        val nextY = offsetY + dragAmount.y
-                        if (nextX.isFinite() && nextY.isFinite()) {
-                            offsetX = nextX
-                            offsetY = nextY
-                        }
+    val baseModifier = Modifier
+        .offset { IntOffset(safeOffsetX.roundToInt(), safeOffsetY.roundToInt()) }
+        .pointerInput(pin.id) {
+            detectDragGestures(
+                onDragStart = { onBringToFront() },
+                onDragEnd = { 
+                    if (safeOffsetX.isFinite() && safeOffsetY.isFinite()) {
+                        onUpdatePosition(safeOffsetX, safeOffsetY) 
                     }
-                )
+                },
+                onDrag = { change, dragAmount ->
+                    change.consume()
+                    val nextX = offsetX + dragAmount.x
+                    val nextY = offsetY + dragAmount.y
+                    if (nextX.isFinite() && nextY.isFinite()) {
+                        offsetX = nextX
+                        offsetY = nextY
+                    }
+                }
+            )
+        }
+        .graphicsLayer(rotationZ = if (pin.rotation.isFinite()) pin.rotation else 0f)
+
+    val sizeModifier = if (pin.height > 0f) {
+        baseModifier.size(pin.width.dp, pin.height.dp)
+    } else {
+        baseModifier.width(pin.width.dp)
+    }
+
+    Box(
+        modifier = sizeModifier
+            .pointerInput(pin.id) {
+                // Also bring to front when tapped
+                detectTapGestures(onTap = { onBringToFront() })
             }
-            .graphicsLayer(rotationZ = if (pin.rotation.isFinite()) pin.rotation else 0f)
-            .width(260.dp)
     ) {
         CorePinCard(
             pin = pin,
@@ -505,7 +557,8 @@ fun DraggablePinCard(
             onDelete = onDelete,
             onToggleHabit = onToggleHabit,
             onToggleBook = onToggleBook,
-            isDraggable = true
+            isDraggable = true,
+            onBringToFront = onBringToFront
         )
     }
 }
@@ -518,11 +571,17 @@ fun StaticPinItemCard(
     onToggleHabit: (String) -> Unit,
     onToggleBook: (String) -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer(rotationZ = pin.rotation * 0.5f)
-    ) {
+    val baseModifier = Modifier
+        .fillMaxWidth()
+        .graphicsLayer(rotationZ = pin.rotation * 0.5f)
+        
+    val sizeModifier = if (pin.height > 0f) {
+        baseModifier.height(pin.height.dp)
+    } else {
+        baseModifier
+    }
+
+    Box(modifier = sizeModifier) {
         CorePinCard(
             pin = pin,
             onEdit = onEdit,
@@ -541,7 +600,8 @@ fun CorePinCard(
     onDelete: () -> Unit,
     onToggleHabit: (String) -> Unit,
     onToggleBook: (String) -> Unit,
-    isDraggable: Boolean
+    isDraggable: Boolean,
+    onBringToFront: () -> Unit = {}
 ) {
     val cardBg = when (pin.bgColor.lowercase()) {
         "navy" -> DeepNavy
@@ -558,23 +618,31 @@ fun CorePinCard(
     val textStyle = if (pin.isItalic) FontStyle.Italic else FontStyle.Normal
     val textDecor = if (pin.isUnderline) TextDecoration.Underline else TextDecoration.None
     
+    val cardShape = when (pin.shape.lowercase()) {
+        "square" -> RectangleShape
+        "cut" -> CutCornerShape(12.dp)
+        "circle" -> CircleShape
+        "capsule" -> RoundedCornerShape(percent = 50)
+        else -> RoundedCornerShape(12.dp)
+    }
+    
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(
                 elevation = if (isDraggable) 6.dp else 2.dp,
-                shape = RoundedCornerShape(12.dp),
+                shape = cardShape,
                 clip = false
             )
             .border(
                 width = 1.dp,
                 color = if (pin.bgColor.lowercase() == "cream") SageGreen.copy(alpha = 0.15f) else Color.Transparent,
-                shape = RoundedCornerShape(12.dp)
+                shape = cardShape
             ),
-        shape = RoundedCornerShape(12.dp),
+        shape = cardShape,
         colors = CardDefaults.cardColors(containerColor = cardBg)
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = if (pin.height > 0f) Modifier.fillMaxSize() else Modifier.fillMaxWidth()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -608,6 +676,21 @@ fun CorePinCard(
                                 )
                             }
                             Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        
+                        // Bring to Front Option
+                        if (isDraggable) {
+                            IconButton(
+                                onClick = onBringToFront,
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowUp,
+                                    contentDescription = "Bring to Front",
+                                    tint = cardMutedOnBg,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                         
                         IconButton(
@@ -2264,6 +2347,116 @@ fun CreateBoardDialog(
     }
 }
 
+// --- Custom Workspace Editor Dialog ---
+@Composable
+fun EditBoardDialog(
+    board: Board,
+    onDismiss: () -> Unit,
+    onSubmit: (title: String, desc: String, category: String, coverImage: String) -> Unit
+) {
+    var title by remember { mutableStateOf(board.title) }
+    var desc by remember { mutableStateOf(board.description) }
+    var category by remember { mutableStateOf(board.category) }
+    var coverUrl by remember { mutableStateOf(board.coverImageUrl) }
+    
+    val categories = listOf("Explore", "Creative", "Growth", "Career", "Active")
+    
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .width(420.dp)
+                .clip(RoundedCornerShape(18.dp)),
+            shape = RoundedCornerShape(18.dp),
+            color = CardWhite,
+            tonalElevation = 6.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth()
+            ) {
+                Text(
+                    text = "EDIT INTENT WORKSPACE",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = SageGreen,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Workspace Title") },
+                    modifier = Modifier.fillMaxWidth().testTag("edit_board_title_input"),
+                    shape = RoundedCornerShape(10.dp)
+                )
+                
+                Spacer(modifier = Modifier.height(10.dp))
+                
+                OutlinedTextField(
+                    value = desc,
+                    onValueChange = { desc = it },
+                    label = { Text("Brief Description") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                )
+                
+                Spacer(modifier = Modifier.height(10.dp))
+                
+                OutlinedTextField(
+                    value = coverUrl,
+                    onValueChange = { coverUrl = it },
+                    label = { Text("Cover Image Link (URL)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                )
+                
+                Spacer(modifier = Modifier.height(14.dp))
+                Text("Workspace Classification:", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                Spacer(modifier = Modifier.height(6.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    categories.forEach { cat ->
+                        SanctuaryChip(
+                            selected = category == cat,
+                            onClick = { category = cat },
+                            label = cat
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(20.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel", color = TextMuted)
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Button(
+                        onClick = {
+                            if (title.isNotBlank()) {
+                                onSubmit(title, desc, category, coverUrl)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = SageGreen),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("submit_board_edit")
+                    ) {
+                        Text("Save Workspace")
+                    }
+                }
+            }
+        }
+    }
+}
+
 // --- SCREEN 5: Rich Text Editor Dialog ---
 @Composable
 fun RichTextEditorSheet(
@@ -2281,12 +2474,20 @@ fun RichTextEditorSheet(
     var isUnderline by remember { mutableStateOf(pin.isUnderline) }
     var bgColor by remember { mutableStateOf(pin.bgColor) }
     
+    // Custom size/shape options
+    var widthScale by remember { mutableStateOf(pin.width) }
+    var heightScale by remember { mutableStateOf(pin.height) }
+    var shape by remember { mutableStateOf(pin.shape) }
+    var zIndex by remember { mutableStateOf(pin.zIndex) }
+    
     val bgOptions = listOf("cream", "navy", "green", "teal", "white")
+    val shapesList = listOf("rounded", "cut", "circle", "square", "capsule")
     
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier
-                .width(420.dp)
+                .width(440.dp)
+                .fillMaxHeight(0.85f)
                 .clip(RoundedCornerShape(18.dp)),
             shape = RoundedCornerShape(18.dp),
             color = CardWhite,
@@ -2294,139 +2495,249 @@ fun RichTextEditorSheet(
         ) {
             Column(
                 modifier = Modifier
+                    .fillMaxSize()
                     .padding(24.dp)
-                    .fillMaxWidth()
             ) {
-                Text(
-                    text = "CARD STYLINGS",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = SageGreen,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                
-                // FORMAT CONTROLS ROW
-                Row(
+                // Scrollable container for all controls inside
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .background(SurfaceCream, RoundedCornerShape(8.dp))
-                        .padding(6.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
                 ) {
-                    // Custom notion styled minimalist character buttons
                     Text(
-                        text = "Serif",
-                        fontFamily = FontFamily.Serif,
+                        text = "CARD STYLINGS & FONTS",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SageGreen,
                         fontWeight = FontWeight.Bold,
-                        color = if (fontSerif) SageGreen else TextMuted,
-                        modifier = Modifier
-                            .clickable { fontSerif = !fontSerif }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                        letterSpacing = 1.2.sp
                     )
-                    Text(
-                        text = "B",
-                        fontWeight = FontWeight.Bold,
-                        color = if (isBold) SageGreen else TextMuted,
+                    Spacer(modifier = Modifier.height(10.dp))
+                    
+                    // FORMAT CONTROLS ROW
+                    Row(
                         modifier = Modifier
-                            .clickable { isBold = !isBold }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                    Text(
-                        text = "I",
-                        fontStyle = FontStyle.Italic,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isItalic) SageGreen else TextMuted,
-                        modifier = Modifier
-                            .clickable { isItalic = !isItalic }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                    Text(
-                        text = "U",
-                        textDecoration = TextDecoration.Underline,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isUnderline) SageGreen else TextMuted,
-                        modifier = Modifier
-                            .clickable { isUnderline = !isUnderline }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Paint Color:", style = MaterialTheme.typography.bodySmall, color = TextMuted)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    bgOptions.forEach { opt ->
-                        val circleColor = when (opt) {
-                            "cream" -> SurfaceCream
-                            "navy" -> DeepNavy
-                            "green" -> SageGreen
-                            "teal" -> CalmTeal
-                            else -> CardWhite
-                        }
-                        Box(
+                            .fillMaxWidth()
+                            .background(SurfaceCream, RoundedCornerShape(8.dp))
+                            .padding(6.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Serif",
+                            fontFamily = FontFamily.Serif,
+                            fontWeight = FontWeight.Bold,
+                            color = if (fontSerif) SageGreen else TextMuted,
                             modifier = Modifier
-                                .size(28.dp)
-                                .padding(2.dp)
-                                .clip(CircleShape)
-                                .background(circleColor)
-                                .border(
-                                    width = if (bgColor == opt) 2.dp else 1.dp,
-                                    color = if (bgColor == opt) TerracottaWarm else SageGreen.copy(alpha = 0.2f),
-                                    shape = CircleShape
-                                )
-                                .clickable { bgColor = opt }
+                                .clickable { fontSerif = !fontSerif }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "B",
+                            fontWeight = FontWeight.Bold,
+                            color = if (isBold) SageGreen else TextMuted,
+                            modifier = Modifier
+                                .clickable { isBold = !isBold }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                        Text(
+                            text = "I",
+                            fontStyle = FontStyle.Italic,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isItalic) SageGreen else TextMuted,
+                            modifier = Modifier
+                                .clickable { isItalic = !isItalic }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                        Text(
+                            text = "U",
+                            textDecoration = TextDecoration.Underline,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isUnderline) SageGreen else TextMuted,
+                            modifier = Modifier
+                                .clickable { isUnderline = !isUnderline }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Paint Color:", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        bgOptions.forEach { opt ->
+                            val circleColor = when (opt) {
+                                "cream" -> SurfaceCream
+                                "navy" -> DeepNavy
+                                "green" -> SageGreen
+                                "teal" -> CalmTeal
+                                else -> CardWhite
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .padding(2.dp)
+                                    .clip(CircleShape)
+                                    .background(circleColor)
+                                    .border(
+                                        width = if (bgColor == opt) 2.dp else 1.dp,
+                                        color = if (bgColor == opt) TerracottaWarm else SageGreen.copy(alpha = 0.2f),
+                                        shape = CircleShape
+                                    )
+                                    .clickable { bgColor = opt }
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Text(
+                        text = "DIMENSIONS & GEOMETRY",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SageGreen,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    
+                    // CARD WIDTH SLIDER
+                    Text("Card Width: ${widthScale.toInt()} dp", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    Slider(
+                        value = widthScale,
+                        onValueChange = { widthScale = it },
+                        valueRange = 120f..400f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // CARD HEIGHT SLIDER
+                    Text(
+                        text = if (heightScale == 0f) "Card Height: Auto (Wrap Content)" else "Card Height: ${heightScale.toInt()} dp",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted
+                    )
+                    Slider(
+                        value = if (heightScale == 0f) 80f else heightScale,
+                        onValueChange = { 
+                            heightScale = if (it <= 90f) 0f else it
+                        },
+                        valueRange = 80f..400f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    // CARD SILHOUETTE SELECTOR
+                    Text("Silhouettes & Shapes:", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        shapesList.forEach { s ->
+                            SanctuaryChip(
+                                selected = shape.lowercase() == s,
+                                onClick = { shape = s },
+                                label = s.replaceFirstChar { it.uppercase() }
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Text(
+                        text = "DEPTH & LAYERING",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SageGreen,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    
+                    // LAYER ELEVATION (Z-INDEX)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = { zIndex += 1f },
+                            colors = ButtonDefaults.buttonColors(containerColor = SageGreen.copy(alpha = 0.12f), contentColor = SageGreen),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Bring Forward")
+                        }
+                        
+                        Button(
+                            onClick = { zIndex = if (zIndex > 1f) zIndex - 1f else 1f },
+                            colors = ButtonDefaults.buttonColors(containerColor = SageGreen.copy(alpha = 0.12f), contentColor = SageGreen),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Send Backward")
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Layer Level: ${zIndex.toInt()}", style = MaterialTheme.typography.bodySmall, color = TextMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Text(
+                        text = "CONTENT DETAILS",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SageGreen,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text("Title") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(10.dp))
+                    
+                    OutlinedTextField(
+                        value = bodyText,
+                        onValueChange = { bodyText = it },
+                        label = { Text("Note content / Quote text") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(110.dp),
+                        textStyle = TextStyle(
+                            fontFamily = if (fontSerif) FontFamily.Serif else FontFamily.Default,
+                            fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal,
+                            fontStyle = if (isItalic) FontStyle.Italic else FontStyle.Normal,
+                            textDecoration = if (isUnderline) TextDecoration.Underline else TextDecoration.None
+                        )
+                    )
+                    
+                    if (pin.type.uppercase() != "IMAGE") {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = subtitle,
+                            onValueChange = { subtitle = it },
+                            label = { Text("Author / Caption Name") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
                 
                 Spacer(modifier = Modifier.height(14.dp))
                 
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Title") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                Spacer(modifier = Modifier.height(10.dp))
-                
-                OutlinedTextField(
-                    value = bodyText,
-                    onValueChange = { bodyText = it },
-                    label = { Text("Note content / Quote text") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(130.dp),
-                    textStyle = TextStyle(
-                        fontFamily = if (fontSerif) FontFamily.Serif else FontFamily.Default,
-                        fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal,
-                        fontStyle = if (isItalic) FontStyle.Italic else FontStyle.Normal,
-                        textDecoration = if (isUnderline) TextDecoration.Underline else TextDecoration.None
-                    )
-                )
-                
-                if (pin.type.uppercase() != "IMAGE") {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = subtitle,
-                        onValueChange = { subtitle = it },
-                        label = { Text("Author / Caption Name") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(20.dp))
-                
+                // Dialog Footer
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     TextButton(onClick = onDismiss) {
                         Text("Cancel", color = TextMuted)
@@ -2443,7 +2754,11 @@ fun RichTextEditorSheet(
                                     isBold = isBold,
                                     isItalic = isItalic,
                                     isUnderline = isUnderline,
-                                    bgColor = bgColor
+                                    bgColor = bgColor,
+                                    width = widthScale,
+                                    height = heightScale,
+                                    shape = shape,
+                                    zIndex = zIndex
                                 )
                             )
                         },

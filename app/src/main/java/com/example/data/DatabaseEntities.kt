@@ -32,5 +32,9 @@ data class PinItem(
     val isBold: Boolean = false,
     val isItalic: Boolean = false,
     val isUnderline: Boolean = false,
-    val bgColor: String = "" // "navy", "green", "cream", or hex
+    val bgColor: String = "", // "navy", "green", "cream", or hex
+    val width: Float = 260f,
+    val height: Float = 0f, // 0f means wrap content
+    val shape: String = "rounded", // "rounded", "cut", "circle", "square", "capsule"
+    val zIndex: Float = 1f
 )

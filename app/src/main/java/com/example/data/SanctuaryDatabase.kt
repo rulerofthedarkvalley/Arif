@@ -48,7 +48,7 @@ interface PinItemDao {
     suspend fun deletePin(pinId: Int)
 }
 
-@Database(entities = [Board::class, PinItem::class], version = 1, exportSchema = false)
+@Database(entities = [Board::class, PinItem::class], version = 2, exportSchema = false)
 abstract class SanctuaryDatabase : RoomDatabase() {
     abstract fun boardDao(): BoardDao
     abstract fun pinItemDao(): PinItemDao
@@ -64,6 +64,7 @@ abstract class SanctuaryDatabase : RoomDatabase() {
                     SanctuaryDatabase::class.java,
                     "sanctuary_database"
                 )
+                .fallbackToDestructiveMigration()
                 .addCallback(DatabaseCallback(scope))
                 .build()
                 INSTANCE = instance
@@ -94,7 +95,7 @@ abstract class SanctuaryDatabase : RoomDatabase() {
             val activeId = boardDao.insertBoard(
                 Board(
                     id = 1,
-                    title = "2024 Intentions",
+                    title = "2026 Intentions",
                     description = "A collection of focused intents and visual memories.",
                     category = "Active",
                     coverImageUrl = ""

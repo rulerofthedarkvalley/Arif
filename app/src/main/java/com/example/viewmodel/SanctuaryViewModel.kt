@@ -26,7 +26,7 @@ class SanctuaryViewModel(application: Application) : AndroidViewModel(applicatio
     val allInspirationPins: StateFlow<List<PinItem>>
 
     // Filters and Active IDs
-    private val _activeBoardId = MutableStateFlow(1) // Defaults to "2024 Intentions"
+    private val _activeBoardId = MutableStateFlow(1) // Defaults to "2026 Intentions"
     val activeBoardId: StateFlow<Int> = _activeBoardId.asStateFlow()
 
     private val _selectedGalleryCategory = MutableStateFlow("All")
@@ -104,6 +104,13 @@ class SanctuaryViewModel(application: Application) : AndroidViewModel(applicatio
                     coverImageUrl = coverImageUrl
                 )
             )
+        }
+    }
+
+    // Update existing board
+    fun updateBoard(board: Board) {
+        viewModelScope.launch {
+            repository.insertBoard(board)
         }
     }
 

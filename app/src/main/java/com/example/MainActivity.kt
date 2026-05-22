@@ -2,6 +2,7 @@ package com.example
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -150,7 +151,7 @@ fun MainSanctuaryShell(viewModel: SanctuaryViewModel) {
                 }
             },
             floatingActionButton = {
-                if (activeTab == "canvas") {
+                if (activeTab == "canvas" && !isFullScreen) {
                     FloatingActionButton(
                         onClick = { showAddPinDialog = true },
                         containerColor = SageGreen,
@@ -162,10 +163,11 @@ fun MainSanctuaryShell(viewModel: SanctuaryViewModel) {
                 }
             }
         ) { innerPadding ->
+            val padding = if (isFullScreen) PaddingValues(0.dp) else innerPadding
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
+                    .padding(padding)
             ) {
                 if (isTablet && !isFullScreen) {
                     NavigationRail(

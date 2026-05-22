@@ -9,6 +9,10 @@ class SanctuaryRepository(
     val allBoards: Flow<List<Board>> = boardDao.getAllBoards()
     val allInspirationPins: Flow<List<PinItem>> = pinItemDao.getAllInspirationPins()
 
+    suspend fun getBoardCount(): Int {
+        return boardDao.getBoardCount()
+    }
+
     fun getPinsForBoard(boardId: Int): Flow<List<PinItem>> {
         return pinItemDao.getPinsForBoard(boardId)
     }

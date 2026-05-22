@@ -67,6 +67,18 @@ class SanctuaryViewModel(application: Application) : AndroidViewModel(applicatio
         val database = SanctuaryDatabase.getDatabase(application, viewModelScope)
         repository = SanctuaryRepository(database.boardDao(), database.pinItemDao())
 
+        // Safely check board count and populate initial data on Dispatchers.IO if empty
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val count = repository.getBoardCount()
+                if (count == 0) {
+                    SanctuaryDatabase.populateInitialData(database.boardDao(), database.pinItemDao())
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
         // Create cold flows to shared StateFlows
         val boardsFlow = repository.allBoards
         val inspirationsFlow = repository.allInspirationPins

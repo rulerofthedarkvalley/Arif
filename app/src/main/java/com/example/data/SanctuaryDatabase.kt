@@ -25,6 +25,9 @@ interface BoardDao {
 
     @Query("DELETE FROM boards WHERE id = :boardId")
     suspend fun deleteBoard(boardId: Int)
+
+    @Query("SELECT COUNT(*) FROM boards")
+    suspend fun getBoardCount(): Int
 }
 
 @Dao
@@ -65,42 +68,9 @@ abstract class SanctuaryDatabase : RoomDatabase() {
                     "sanctuary_database"
                 )
                 .fallbackToDestructiveMigration()
-                .addCallback(DatabaseCallback(scope))
                 .build()
                 INSTANCE = instance
                 instance
-            }
-        }
-    }
-
-    private class DatabaseCallback(
-        private val scope: CoroutineScope
-    ) : RoomDatabase.Callback() {
-        override fun onCreate(db: SupportSQLiteDatabase) {
-            super.onCreate(db)
-            scope.launch(Dispatchers.IO) {
-                var retries = 0
-                while (INSTANCE == null && retries < 10) {
-                    kotlinx.coroutines.delay(50)
-                    retries++
-                }
-                INSTANCE?.let { database ->
-                    populateInitialData(database.boardDao(), database.pinItemDao())
-                }
-            }
-        }
-
-        override fun onDestructiveMigration(db: SupportSQLiteDatabase) {
-            super.onDestructiveMigration(db)
-            scope.launch(Dispatchers.IO) {
-                var retries = 0
-                while (INSTANCE == null && retries < 10) {
-                    kotlinx.coroutines.delay(50)
-                    retries++
-                }
-                INSTANCE?.let { database ->
-                    populateInitialData(database.boardDao(), database.pinItemDao())
-                }
             }
         }
 

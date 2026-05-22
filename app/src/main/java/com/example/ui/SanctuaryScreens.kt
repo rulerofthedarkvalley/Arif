@@ -61,18 +61,20 @@ fun DottedCanvasBackground(modifier: Modifier = Modifier) {
         val spacing = 24.dp.toPx()
         val radius = 1.5.dp.toPx()
         
-        var x = 0f
-        while (x < size.width) {
-            var y = 0f
-            while (y < size.height) {
-                drawCircle(
-                    color = dotColor,
-                    radius = radius,
-                    center = Offset(x, y)
-                )
-                y += spacing
+        if (spacing > 0f) {
+            var x = 0f
+            while (x < size.width) {
+                var y = 0f
+                while (y < size.height) {
+                    drawCircle(
+                        color = dotColor,
+                        radius = radius,
+                        center = Offset(x, y)
+                    )
+                    y += spacing
+                }
+                x += spacing
             }
-            x += spacing
         }
     }
 }
@@ -497,25 +499,21 @@ fun BoardCanvasScreen(
                         .padding(16.dp),
                     contentAlignment = Alignment.TopEnd
                 ) {
-                    Button(
+                    IconButton(
                         onClick = { viewModel.setFullScreen(false) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = SageGreen,
-                            contentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(20.dp),
-                        modifier = Modifier.testTag("exit_fullscreen_floating_button")
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(
+                                color = Color.Black.copy(alpha = 0.4f),
+                                shape = CircleShape
+                            )
+                            .testTag("exit_fullscreen_floating_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Exit Full Screen",
+                            tint = Color.White,
                             modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Exit Full Screen",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -612,10 +610,6 @@ fun DraggablePinCard(
 
     Box(
         modifier = sizeModifier
-            .pointerInput(pin.id) {
-                // Also bring to front when tapped
-                detectTapGestures(onTap = { onBringToFront() })
-            }
     ) {
         CorePinCard(
             pin = pin,
@@ -704,7 +698,8 @@ fun CorePinCard(
                 width = 1.dp,
                 color = if (pin.bgColor.lowercase() == "cream") SageGreen.copy(alpha = 0.15f) else Color.Transparent,
                 shape = cardShape
-            ),
+            )
+            .clickable { onBringToFront() },
         shape = cardShape,
         colors = CardDefaults.cardColors(containerColor = cardBg)
     ) {

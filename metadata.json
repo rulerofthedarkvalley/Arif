@@ -1,0 +1,6 @@
+{
+  "name": "Sanctuary",
+  "description": "An elegant interactive digital vision board with physical draggable widgets, customizable note/checklist templates, and daily poetic sparks powered by Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

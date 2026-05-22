@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Serene Peak of Intent mountain shape layered over a glowing path -->
+    <!-- Stylized background sun or spark of inspiration -->
+    <path
+        android:fillColor="#BACCA8"
+        android:pathData="M54,26c6.63,0 12,5.37 12,12s-5.37,12 -12,12s-12,-5.37 -12,-12s5.37,-12 12,-12z" />
+    <!-- Peak Serenity layered minimalist lines -->
+    <path
+        android:fillColor="#FBF9F4"
+        android:pathData="M54,34 L28,74 L80,74 Z" />
+    <path
+        android:fillColor="#D6E9C3"
+        android:pathData="M54,34 L40,74 L68,74 Z" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M24,78 L84,78" />
+</vector>

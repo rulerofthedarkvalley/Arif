@@ -14,3 +14,10 @@ val TerracottaWarm = Color(0xFFC77A58)
 val TextDark = Color(0xFF1C1C24)
 val TextMuted = Color(0xFF6E6E77)
 val AlertPink = Color(0xFFEFB8C8)
+
+// Beautiful new premium colors for custom paint cards
+val DustyRose = Color(0xFFE5989B)
+val GoldenOchre = Color(0xFFE9C46A)
+val LavenderFog = Color(0xFFB5A7CE)
+val CustomSkyBlue = Color(0xFFA2D2FF)
+

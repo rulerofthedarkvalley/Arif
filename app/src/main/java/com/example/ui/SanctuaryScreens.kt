@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
@@ -59,7 +61,11 @@ fun resolveFontFamily(pin: PinItem?): FontFamily {
         "serif" -> FontFamily.Serif
         "sans-serif", "sans", "sansserif" -> FontFamily.SansSerif
         "monospace", "mono" -> FontFamily.Monospace
-        "cursive" -> FontFamily.Cursive
+        "cursive", "script" -> FontFamily.Cursive
+        "casual", "playful" -> FontFamily(android.graphics.Typeface.create("casual", android.graphics.Typeface.NORMAL))
+        "condensed", "bold-sans", "clean" -> FontFamily(android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.NORMAL))
+        "typewriter", "retro", "serif-mono" -> FontFamily(android.graphics.Typeface.create("serif-monospace", android.graphics.Typeface.NORMAL))
+        "elegant", "serene", "medium" -> FontFamily(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL))
         else -> if (pin?.fontSerif == true) FontFamily.Serif else FontFamily.Default
     }
 }
@@ -469,7 +475,9 @@ fun BoardCanvasScreen(
                                 pin = pin,
                                 canvasWidth = safeWidth,
                                 canvasHeight = safeHeight,
-                                onUpdatePosition = { x, y -> viewModel.updatePinPosition(pin, x, y) },
+                                onUpdatePositionScale = { w, h, x, y ->
+                                    viewModel.updatePin(pin.copy(width = w, height = h, posX = x, posY = y))
+                                },
                                 onDelete = { viewModel.deletePin(pin.id) },
                                 onEdit = { onEditNote(pin) },
                                 onToggleHabit = { item -> viewModel.toggleHabitItem(pin, item) },
@@ -580,7 +588,7 @@ fun DraggablePinCard(
     pin: PinItem,
     canvasWidth: Float,
     canvasHeight: Float,
-    onUpdatePosition: (Float, Float) -> Unit,
+    onUpdatePositionScale: (Float, Float, Float, Float) -> Unit, // width, height, posX, posY
     onDelete: () -> Unit,
     onEdit: () -> Unit,
     onToggleHabit: (String) -> Unit,
@@ -588,14 +596,18 @@ fun DraggablePinCard(
     onBringToFront: () -> Unit
 ) {
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val cardWidthPx = remember(pin.width, density) {
-        with(density) { pin.width.dp.toPx() }
+    
+    var localWidth by remember(pin.width) { mutableStateOf(pin.width) }
+    var localHeight by remember(pin.height) { mutableStateOf(pin.height) }
+
+    val cardWidthPx = remember(localWidth, density) {
+        with(density) { localWidth.dp.toPx() }
     }
-    val cardHeightPx = remember(pin.height, density) {
-        with(density) { if (pin.height > 0f) pin.height.dp.toPx() else 300.dp.toPx() }
+    val cardHeightPx = remember(localHeight, density) {
+        with(density) { if (localHeight > 0f) localHeight.dp.toPx() else 300.dp.toPx() }
     }
 
-    val initialX = remember(pin.posX, canvasWidth) {
+    val initialX = remember(pin.posX, canvasWidth, cardWidthPx) {
         val safePosX = if (pin.posX.isFinite()) pin.posX else 0f
         val normX = if (safePosX > 1.2f) {
             val ratio = ((safePosX - 40f) / (820f - 40f)).coerceIn(0f, 1f)
@@ -607,7 +619,7 @@ fun DraggablePinCard(
         normX * maxAvailableX
     }
 
-    val initialY = remember(pin.posY, canvasHeight) {
+    val initialY = remember(pin.posY, canvasHeight, cardHeightPx) {
         val safePosY = if (pin.posY.isFinite()) pin.posY else 0f
         val normY = if (safePosY > 1.2f) {
             val ratio = ((safePosY - 40f) / (480f - 40f)).coerceIn(0f, 1f)
@@ -619,12 +631,25 @@ fun DraggablePinCard(
         normY * maxAvailableY
     }
 
-    var offsetX by remember { mutableStateOf(initialX) }
-    var offsetY by remember { mutableStateOf(initialY) }
+    var offsetX by remember(pin.id) { mutableStateOf(initialX) }
+    var offsetY by remember(pin.id) { mutableStateOf(initialY) }
     
-    LaunchedEffect(initialX, initialY) {
-        offsetX = initialX
-        offsetY = initialY
+    // Unified Debounced Save of Sizing & Position changes
+    LaunchedEffect(offsetX, offsetY, localWidth, localHeight) {
+        val hasSizeChanged = localWidth != pin.width || localHeight != pin.height
+        
+        val maxAvailableX = (canvasWidth - cardWidthPx).coerceAtLeast(1f)
+        val maxAvailableY = (canvasHeight - cardHeightPx).coerceAtLeast(1f)
+        
+        val normX = (offsetX / maxAvailableX).coerceIn(0f, 1f)
+        val normY = (offsetY / maxAvailableY).coerceIn(0f, 1f)
+        
+        val hasPositionChanged = Math.abs(normX - pin.posX) > 0.01f || Math.abs(normY - pin.posY) > 0.01f
+        
+        if (hasSizeChanged || hasPositionChanged) {
+            kotlinx.coroutines.delay(400) // Debounce for 400ms after user stops gesturing
+            onUpdatePositionScale(localWidth, localHeight, normX, normY)
+        }
     }
     
     val safeOffsetX = if (offsetX.isFinite()) offsetX else 0f
@@ -632,35 +657,52 @@ fun DraggablePinCard(
     
     val baseModifier = Modifier
         .offset { IntOffset(safeOffsetX.roundToInt(), safeOffsetY.roundToInt()) }
-        .pointerInput(pin.id, canvasWidth, canvasHeight) {
-            detectDragGestures(
-                onDragStart = { onBringToFront() },
-                onDragEnd = { 
-                    if (safeOffsetX.isFinite() && safeOffsetY.isFinite() && canvasWidth > 0f && canvasHeight > 0f) {
-                        val maxAvailableX = (canvasWidth - cardWidthPx).coerceAtLeast(1f)
-                        val maxAvailableY = (canvasHeight - cardHeightPx).coerceAtLeast(1f)
-                        val finalNormX = (safeOffsetX / maxAvailableX).coerceIn(0f, 1f)
-                        val finalNormY = (safeOffsetY / maxAvailableY).coerceIn(0f, 1f)
-                        onUpdatePosition(finalNormX, finalNormY) 
+        .pointerInput(pin.id) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    if (event.type == PointerEventType.Press) {
+                        onBringToFront()
                     }
-                },
-                onDrag = { change, dragAmount ->
-                    change.consume()
-                    val nextX = offsetX + dragAmount.x
-                    val nextY = offsetY + dragAmount.y
-                    if (nextX.isFinite() && nextY.isFinite() && canvasWidth > 0f && canvasHeight > 0f) {
-                        offsetX = nextX.coerceIn(0f, (canvasWidth - cardWidthPx).coerceAtLeast(0f))
-                        offsetY = nextY.coerceIn(0f, (canvasHeight - cardHeightPx).coerceAtLeast(0f))
+                }
+            }
+        }
+        .pointerInput(pin.id, canvasWidth, canvasHeight) {
+            detectTransformGestures(
+                onGesture = { centroid, pan, zoom, rotation ->
+                    // 1. PINCH ZOOM SCALE (Enlarge / Shrink)
+                    if (zoom != 1f) {
+                        localWidth = (localWidth * zoom).coerceIn(150f, 500f)
+                        if (localHeight > 0f) {
+                            localHeight = (localHeight * zoom).coerceIn(100f, 600f)
+                        }
+                    }
+                    
+                    // 2. DRAG PANNING MOTION
+                    val nowWidthPx = with(density) { localWidth.dp.toPx() }
+                    val nowHeightPx = with(density) { if (localHeight > 0f) localHeight.dp.toPx() else 300.dp.toPx() }
+                    
+                    val maxAvailableX = (canvasWidth - nowWidthPx).coerceAtLeast(0f)
+                    val maxAvailableY = (canvasHeight - nowHeightPx).coerceAtLeast(0f)
+                    
+                    val nextX = offsetX + pan.x
+                    val nextY = offsetY + pan.y
+                    
+                    if (nextX.isFinite()) {
+                        offsetX = nextX.coerceIn(0f, maxAvailableX)
+                    }
+                    if (nextY.isFinite()) {
+                        offsetY = nextY.coerceIn(0f, maxAvailableY)
                     }
                 }
             )
         }
         .graphicsLayer(rotationZ = if (pin.rotation.isFinite()) pin.rotation else 0f)
 
-    val sizeModifier = if (pin.height > 0f) {
-        baseModifier.size(pin.width.dp, pin.height.dp)
+    val sizeModifier = if (localHeight > 0f) {
+        baseModifier.size(localWidth.dp, localHeight.dp)
     } else {
-        baseModifier.width(pin.width.dp)
+        baseModifier.width(localWidth.dp)
     }
 
     Box(
@@ -723,10 +765,15 @@ fun CorePinCard(
         "green" -> SageGreen
         "teal" -> CalmTeal
         "cream" -> SurfaceCream
+        "rose" -> DustyRose
+        "gold" -> GoldenOchre
+        "lavender" -> LavenderFog
+        "sky" -> CustomSkyBlue
         else -> CardWhite
     }
-    val cardOnBg = if (pin.bgColor.lowercase() == "navy" || pin.bgColor.lowercase() == "green" || pin.bgColor.lowercase() == "teal") Color.White else TextDark
-    val cardMutedOnBg = if (pin.bgColor.lowercase() == "navy" || pin.bgColor.lowercase() == "green" || pin.bgColor.lowercase() == "teal") Color.White.copy(alpha = 0.7f) else TextMuted
+    val isDarkBg = pin.bgColor.lowercase() in listOf("navy", "green", "teal")
+    val cardOnBg = if (isDarkBg) Color.White else TextDark
+    val cardMutedOnBg = if (isDarkBg) Color.White.copy(alpha = 0.7f) else TextMuted
     
     val serifFont = resolveFontFamily(pin)
     val textWeight = if (pin.isBold) FontWeight.Bold else FontWeight.Normal
@@ -2603,7 +2650,7 @@ fun RichTextEditorSheet(
     var shape by remember { mutableStateOf(pin.shape) }
     var zIndex by remember { mutableStateOf(pin.zIndex) }
     
-    val bgOptions = listOf("cream", "navy", "green", "teal", "white")
+    val bgOptions = listOf("cream", "navy", "green", "teal", "white", "rose", "gold", "lavender", "sky")
     val shapesList = listOf("rounded", "cut", "circle", "square", "capsule")
     
     Dialog(onDismissRequest = onDismiss) {
@@ -2728,50 +2775,108 @@ fun RichTextEditorSheet(
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     
-                    // MULTIPLE BEAUTIFUL FONT OPTIONS ROW
-                    Row(
+                    // MULTIPLE BEAUTIFUL FONT OPTIONS - 2 ROWS FOR COMFORTABLE TOUCH TARGETS
+                    val row1Fonts = listOf("SansSerif", "Serif", "Monospace", "Cursive")
+                    val row2Fonts = listOf("Casual", "Condensed", "Typewriter", "Elegant")
+                    
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        listOf("SansSerif", "Serif", "Monospace", "Cursive").forEach { font ->
-                            val label = when (font) {
-                                "SansSerif" -> "Sans"
-                                "Serif" -> "Serif"
-                                "Monospace" -> "Mono"
-                                "Cursive" -> "Script"
-                                else -> font
-                            }
-                            val isSelected = fontFamilyStr.lowercase() == font.lowercase()
-                            
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSelected) SageGreen.copy(alpha = 0.15f) else SurfaceCream)
-                                    .border(
-                                        width = if (isSelected) 1.5.dp else 0.dp,
-                                        color = if (isSelected) SageGreen else Color.Transparent,
-                                        shape = RoundedCornerShape(8.dp)
+                        // First Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            row1Fonts.forEach { font ->
+                                val label = when (font) {
+                                    "SansSerif" -> "Sans"
+                                    "Serif" -> "Serif"
+                                    "Monospace" -> "Mono"
+                                    "Cursive" -> "Script"
+                                    else -> font
+                                }
+                                val isSelected = fontFamilyStr.lowercase() == font.lowercase()
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) SageGreen.copy(alpha = 0.15f) else SurfaceCream)
+                                        .border(
+                                            width = if (isSelected) 1.5.dp else 0.dp,
+                                            color = if (isSelected) SageGreen else Color.Transparent,
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable { 
+                                            fontFamilyStr = font
+                                            fontSerif = (font.lowercase() == "serif")
+                                        }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) SageGreen else TextMuted,
+                                        fontFamily = when (font) {
+                                            "Serif" -> FontFamily.Serif
+                                            "Monospace" -> FontFamily.Monospace
+                                            "Cursive" -> FontFamily.Cursive
+                                            else -> FontFamily.SansSerif
+                                        }
                                     )
-                                    .clickable { 
-                                        fontFamilyStr = font
-                                        fontSerif = (font.lowercase() == "serif")
-                                    }
-                                    .padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) SageGreen else TextMuted,
-                                    fontFamily = when (font) {
-                                        "Serif" -> FontFamily.Serif
-                                        "Monospace" -> FontFamily.Monospace
-                                        "Cursive" -> FontFamily.Cursive
-                                        else -> FontFamily.SansSerif
-                                    }
-                                )
+                                }
+                            }
+                        }
+                        
+                        // Second Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            row2Fonts.forEach { font ->
+                                val label = when (font) {
+                                    "Casual" -> "Playful"
+                                    "Condensed" -> "Clean"
+                                    "Typewriter" -> "Retro"
+                                    "Elegant" -> "Serene"
+                                    else -> font
+                                }
+                                val isSelected = fontFamilyStr.lowercase() == font.lowercase()
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) SageGreen.copy(alpha = 0.15f) else SurfaceCream)
+                                        .border(
+                                            width = if (isSelected) 1.5.dp else 0.dp,
+                                            color = if (isSelected) SageGreen else Color.Transparent,
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable { 
+                                            fontFamilyStr = font
+                                            fontSerif = (font.lowercase() == "serif")
+                                        }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) SageGreen else TextMuted,
+                                        fontFamily = when (font) {
+                                            "Casual" -> FontFamily(android.graphics.Typeface.create("casual", android.graphics.Typeface.NORMAL))
+                                            "Condensed" -> FontFamily(android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.NORMAL))
+                                            "Typewriter" -> FontFamily(android.graphics.Typeface.create("serif-monospace", android.graphics.Typeface.NORMAL))
+                                            "Elegant" -> FontFamily(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL))
+                                            else -> FontFamily.SansSerif
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -2784,28 +2889,37 @@ fun RichTextEditorSheet(
                     ) {
                         Text("Paint Color:", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                         Spacer(modifier = Modifier.width(8.dp))
-                        bgOptions.forEach { opt ->
-                            val circleColor = when (opt) {
-                                "cream" -> SurfaceCream
-                                "navy" -> DeepNavy
-                                "green" -> SageGreen
-                                "teal" -> CalmTeal
-                                else -> CardWhite
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            bgOptions.forEach { opt ->
+                                val circleColor = when (opt) {
+                                    "cream" -> SurfaceCream
+                                    "navy" -> DeepNavy
+                                    "green" -> SageGreen
+                                    "teal" -> CalmTeal
+                                    "white" -> CardWhite
+                                    "rose" -> DustyRose
+                                    "gold" -> GoldenOchre
+                                    "lavender" -> LavenderFog
+                                    "sky" -> CustomSkyBlue
+                                    else -> CardWhite
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .padding(1.dp)
+                                        .clip(CircleShape)
+                                        .background(circleColor)
+                                        .border(
+                                            width = if (bgColor == opt) 2.dp else 1.dp,
+                                            color = if (bgColor == opt) TerracottaWarm else SageGreen.copy(alpha = 0.2f),
+                                            shape = CircleShape
+                                        )
+                                        .clickable { bgColor = opt }
+                                )
                             }
-                            Box(
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .padding(2.dp)
-                                    .clip(CircleShape)
-                                    .background(circleColor)
-                                    .border(
-                                        width = if (bgColor == opt) 2.dp else 1.dp,
-                                        color = if (bgColor == opt) TerracottaWarm else SageGreen.copy(alpha = 0.2f),
-                                        shape = CircleShape
-                                    )
-                                    .clickable { bgColor = opt }
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
                         }
                     }
                     

@@ -8,6 +8,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -471,7 +474,8 @@ fun BoardCanvasScreen(
                         val safeHeight = if (canvasHeight > 0f) canvasHeight else 800f
 
                         activePins.sortedWith(compareBy({ it.zIndex }, { it.id })).forEach { pin ->
-                            DraggablePinCard(
+                            key(pin.id) {
+                                DraggablePinCard(
                                 pin = pin,
                                 canvasWidth = safeWidth,
                                 canvasHeight = safeHeight,
@@ -489,6 +493,7 @@ fun BoardCanvasScreen(
                                     }
                                 }
                             )
+                            }
                         }
                     }
                 } else {
@@ -597,8 +602,21 @@ fun DraggablePinCard(
 ) {
     val density = androidx.compose.ui.platform.LocalDensity.current
     
-    var localWidth by remember(pin.width) { mutableStateOf(pin.width) }
-    var localHeight by remember(pin.height) { mutableStateOf(pin.height) }
+    var localWidth by remember(pin.id) { mutableStateOf(pin.width) }
+    var localHeight by remember(pin.id) { mutableStateOf(pin.height) }
+    var renderedHeightPx by remember { mutableStateOf(0f) }
+    var isGesturing by remember { mutableStateOf(false) }
+
+    LaunchedEffect(pin.width, pin.height) {
+        if (!isGesturing) {
+            if (kotlin.math.abs(localWidth - pin.width) > 2f) {
+                localWidth = pin.width
+            }
+            if (kotlin.math.abs(localHeight - pin.height) > 2f) {
+                localHeight = pin.height
+            }
+        }
+    }
 
     val cardWidthPx = remember(localWidth, density) {
         with(density) { localWidth.dp.toPx() }
@@ -634,6 +652,42 @@ fun DraggablePinCard(
     var offsetX by remember(pin.id) { mutableStateOf(initialX) }
     var offsetY by remember(pin.id) { mutableStateOf(initialY) }
     
+    // Sync external coordinate changes
+    LaunchedEffect(pin.posX, pin.posY, canvasWidth, cardWidthPx, cardHeightPx) {
+        if (!isGesturing) {
+            val maxAvailableX = (canvasWidth - cardWidthPx).coerceAtLeast(1f)
+            val maxAvailableY = (canvasHeight - cardHeightPx).coerceAtLeast(1f)
+            
+            val safePosX = if (pin.posX.isFinite()) pin.posX else 0f
+            val normX = if (safePosX > 1.2f) {
+                val ratio = ((safePosX - 40f) / (820f - 40f)).coerceIn(0f, 1f)
+                0.02f + ratio * 0.96f
+            } else {
+                safePosX.coerceIn(0f, 1f)
+            }
+            
+            val safePosY = if (pin.posY.isFinite()) pin.posY else 0f
+            val normY = if (safePosY > 1.2f) {
+                val ratio = ((safePosY - 40f) / (480f - 40f)).coerceIn(0f, 1f)
+                0.03f + ratio * 0.92f
+            } else {
+                safePosY.coerceIn(0f, 1f)
+            }
+            
+            val targetX = normX * maxAvailableX
+            val targetY = normY * maxAvailableY
+            
+            if (kotlin.math.abs(offsetX - targetX) > 8f) {
+                offsetX = targetX
+            }
+            if (kotlin.math.abs(offsetY - targetY) > 8f) {
+                offsetY = targetY
+            }
+        }
+    }
+    
+    val currentOnUpdatePositionScale by rememberUpdatedState(onUpdatePositionScale)
+    
     // Unified Debounced Save of Sizing & Position changes
     LaunchedEffect(offsetX, offsetY, localWidth, localHeight) {
         val hasSizeChanged = localWidth != pin.width || localHeight != pin.height
@@ -644,11 +698,11 @@ fun DraggablePinCard(
         val normX = (offsetX / maxAvailableX).coerceIn(0f, 1f)
         val normY = (offsetY / maxAvailableY).coerceIn(0f, 1f)
         
-        val hasPositionChanged = Math.abs(normX - pin.posX) > 0.01f || Math.abs(normY - pin.posY) > 0.01f
+        val hasPositionChanged = kotlin.math.abs(normX - pin.posX) > 0.01f || kotlin.math.abs(normY - pin.posY) > 0.01f
         
         if (hasSizeChanged || hasPositionChanged) {
             kotlinx.coroutines.delay(400) // Debounce for 400ms after user stops gesturing
-            onUpdatePositionScale(localWidth, localHeight, normX, normY)
+            currentOnUpdatePositionScale(localWidth, localHeight, normX, normY)
         }
     }
     
@@ -657,45 +711,103 @@ fun DraggablePinCard(
     
     val baseModifier = Modifier
         .offset { IntOffset(safeOffsetX.roundToInt(), safeOffsetY.roundToInt()) }
-        .pointerInput(pin.id) {
-            awaitPointerEventScope {
-                while (true) {
-                    val event = awaitPointerEvent()
-                    if (event.type == PointerEventType.Press) {
-                        onBringToFront()
-                    }
+        .pointerInput(pin.id, canvasWidth, canvasHeight) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                onBringToFront()
+                isGesturing = true
+                var lastPointers = listOf<Offset>()
+                
+                try {
+                    do {
+                        val event = awaitPointerEvent()
+                        val activePointers = event.changes.filter { it.pressed }
+                        
+                        if (activePointers.size >= 2) {
+                            val p1 = activePointers[0].position
+                            val p2 = activePointers[1].position
+                            val currentPointers = listOf(p1, p2)
+                            
+                            if (lastPointers.size >= 2) {
+                                val dxOld = kotlin.math.abs(lastPointers[0].x - lastPointers[1].x)
+                                val dyOld = kotlin.math.abs(lastPointers[0].y - lastPointers[1].y)
+                                
+                                val dxNew = kotlin.math.abs(p1.x - p2.x)
+                                val dyNew = kotlin.math.abs(p1.y - p2.y)
+                                
+                                val zoomX = if (dxOld > 30f && dxNew > 30f) (dxNew / dxOld).coerceIn(0.8f, 1.2f) else 1f
+                                val zoomY = if (dyOld > 30f && dyNew > 30f) (dyNew / dyOld).coerceIn(0.8f, 1.2f) else 1f
+                                
+                                // Apply width stretch
+                                if (zoomX != 1f) {
+                                    localWidth = (localWidth * zoomX).coerceIn(150f, 500f)
+                                }
+                                
+                                // Apply height stretch
+                                if (zoomY != 1f) {
+                                    val realHeightDp = if (localHeight > 0f) localHeight else with(density) { renderedHeightPx.toDp().value }
+                                    localHeight = (realHeightDp * zoomY).coerceIn(100f, 600f)
+                                }
+                                
+                                // Panning with 2 fingers by centroid shift
+                                val centroidOld = (lastPointers[0] + lastPointers[1]) / 2f
+                                val centroidNew = (p1 + p2) / 2f
+                                val pan = centroidNew - centroidOld
+                                
+                                val nowWidthPx = with(density) { localWidth.dp.toPx() }
+                                val nowHeightPx = with(density) { if (localHeight > 0f) localHeight.dp.toPx() else renderedHeightPx }
+                                
+                                val maxAvailableX = (canvasWidth - nowWidthPx).coerceAtLeast(0f)
+                                val maxAvailableY = (canvasHeight - nowHeightPx).coerceAtLeast(0f)
+                                
+                                val nextX = offsetX + pan.x
+                                val nextY = offsetY + pan.y
+                                
+                                if (nextX.isFinite()) {
+                                    offsetX = nextX.coerceIn(0f, maxAvailableX)
+                                }
+                                if (nextY.isFinite()) {
+                                    offsetY = nextY.coerceIn(0f, maxAvailableY)
+                                }
+                            }
+                            lastPointers = currentPointers
+                            event.changes.forEach { it.consume() }
+                            
+                        } else if (activePointers.size == 1) {
+                            val p = activePointers[0].position
+                            if (lastPointers.size == 1) {
+                                val pan = p - lastPointers[0]
+                                
+                                val nowWidthPx = with(density) { localWidth.dp.toPx() }
+                                val nowHeightPx = with(density) { if (localHeight > 0f) localHeight.dp.toPx() else renderedHeightPx }
+                                
+                                val maxAvailableX = (canvasWidth - nowWidthPx).coerceAtLeast(0f)
+                                val maxAvailableY = (canvasHeight - nowHeightPx).coerceAtLeast(0f)
+                                
+                                val nextX = offsetX + pan.x
+                                val nextY = offsetY + pan.y
+                                
+                                if (nextX.isFinite()) {
+                                    offsetX = nextX.coerceIn(0f, maxAvailableX)
+                                }
+                                if (nextY.isFinite()) {
+                                    offsetY = nextY.coerceIn(0f, maxAvailableY)
+                                }
+                            }
+                            lastPointers = listOf(p)
+                            event.changes.forEach {
+                                if (it.previousPosition != it.position) {
+                                    it.consume()
+                                }
+                            }
+                        } else {
+                            lastPointers = emptyList()
+                        }
+                    } while (event.changes.any { it.pressed })
+                } finally {
+                    isGesturing = false
                 }
             }
-        }
-        .pointerInput(pin.id, canvasWidth, canvasHeight) {
-            detectTransformGestures(
-                onGesture = { centroid, pan, zoom, rotation ->
-                    // 1. PINCH ZOOM SCALE (Enlarge / Shrink)
-                    if (zoom != 1f) {
-                        localWidth = (localWidth * zoom).coerceIn(150f, 500f)
-                        if (localHeight > 0f) {
-                            localHeight = (localHeight * zoom).coerceIn(100f, 600f)
-                        }
-                    }
-                    
-                    // 2. DRAG PANNING MOTION
-                    val nowWidthPx = with(density) { localWidth.dp.toPx() }
-                    val nowHeightPx = with(density) { if (localHeight > 0f) localHeight.dp.toPx() else 300.dp.toPx() }
-                    
-                    val maxAvailableX = (canvasWidth - nowWidthPx).coerceAtLeast(0f)
-                    val maxAvailableY = (canvasHeight - nowHeightPx).coerceAtLeast(0f)
-                    
-                    val nextX = offsetX + pan.x
-                    val nextY = offsetY + pan.y
-                    
-                    if (nextX.isFinite()) {
-                        offsetX = nextX.coerceIn(0f, maxAvailableX)
-                    }
-                    if (nextY.isFinite()) {
-                        offsetY = nextY.coerceIn(0f, maxAvailableY)
-                    }
-                }
-            )
         }
         .graphicsLayer(rotationZ = if (pin.rotation.isFinite()) pin.rotation else 0f)
 
@@ -706,7 +818,9 @@ fun DraggablePinCard(
     }
 
     Box(
-        modifier = sizeModifier
+        modifier = sizeModifier.onSizeChanged { size ->
+            renderedHeightPx = size.height.toFloat()
+        }
     ) {
         CorePinCard(
             pin = pin,
